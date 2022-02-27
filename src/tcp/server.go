@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"golang.org/x/time/rate"
 	"net"
 	"os"
 	"runtime"
+	"time"
 )
 
 func Handler(conn net.Conn) {
@@ -16,7 +18,7 @@ func Handler(conn net.Conn) {
 	}
 	fileName := string(buf[:n])
 	addr := conn.RemoteAddr().String()
-	fmt.Println(addr + ": Transfer FileName from Client \n" + fileName)
+	fmt.Println(addr + ": Transfer FileName from Client ：" + fileName)
 
 	conn.Write([]byte("ok"))
 	f, err := os.Create(fileName)
@@ -24,15 +26,22 @@ func Handler(conn net.Conn) {
 		fmt.Println(err)
 		return
 	}
-
+	limiter := rate.NewLimiter(1024, 2048)
 	for {
-		buf := make([]byte, 2048)
-		n, _ := conn.Read(buf)
-		if string(buf[:n]) == "finish" {
-			fmt.Println(addr + ": finish")
-			runtime.Goexit()
+		if limiter.Allow() {
+			buf := make([]byte, 2048)
+			n, _ := conn.Read(buf)
+			if string(buf) == "finish" {
+				fmt.Println(addr + ": finish")
+				runtime.Goexit()
+			}
+			fmt.Println(string(buf[:n]))
+			f.Write(buf[:n])
+			fmt.Printf("Ok  %s\n", time.Now().Format("2006-01-02 15:04:05.000"))
+		} else {
+			fmt.Printf("Err %s\n", time.Now().Format("2006-01-02 15:04:05.000"))
+			time.Sleep(3 * time.Second)
 		}
-		f.Write(buf[:n])
 
 	}
 	defer conn.Close()
@@ -46,6 +55,7 @@ func main() {
 	}
 	defer listen.Close()
 	fmt.Println("server is running")
+
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
@@ -54,4 +64,5 @@ func main() {
 		}
 		go Handler(conn)
 	}
+
 }
